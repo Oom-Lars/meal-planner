@@ -2,13 +2,15 @@ import { useState } from 'react';
 import {
   CalendarDaysIcon, ShoppingCartIcon, BookOpenIcon,
   ChartBarIcon, ArrowDownTrayIcon, ArrowUpTrayIcon,
-  ScissorsIcon,
+  ScissorsIcon, ArrowRightOnRectangleIcon,
 } from '@heroicons/react/24/outline';
 import { useStore } from './useStore';
+import { useAuth } from './useAuth';
 import MealPlanView from './components/MealPlanView';
 import ShoppingView from './components/ShoppingView';
 import MealsView from './components/MealsView';
 import SpendingView from './components/SpendingView';
+import LoginScreen from './components/LoginScreen';
 import './App.css';
 
 type Tab = 'plan' | 'shopping' | 'meals' | 'spending';
@@ -22,6 +24,7 @@ const TABS = [
 
 export default function App() {
   const [tab, setTab] = useState<Tab>('plan');
+  const { user, loading, signIn, signOut } = useAuth();
   const store = useStore();
 
   const handleImport = () => {
@@ -41,6 +44,21 @@ export default function App() {
     input.click();
   };
 
+  if (loading) {
+    return (
+      <div className="splash">
+        <div className="splash-logo">
+          <ScissorsIcon style={{ width: 32, height: 32 }} />
+        </div>
+        <div className="splash-spinner" />
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <LoginScreen onSignIn={signIn} />;
+  }
+
   return (
     <div className="app">
       <header className="app-header">
@@ -51,15 +69,19 @@ export default function App() {
             </div>
             <div>
               <div className="header-title">Meal Planner</div>
-              <div className="header-subtitle">Family Kitchen</div>
+              <div className="header-subtitle">{user.displayName ?? 'Family Kitchen'}</div>
             </div>
           </div>
           <div className="header-actions">
+            {!store.synced && <div className="sync-dot" title="Syncing..." />}
             <button className="header-btn" onClick={store.exportData} title="Export data">
               <ArrowDownTrayIcon style={{ width: 16, height: 16 }} />
             </button>
             <button className="header-btn" onClick={handleImport} title="Import data">
               <ArrowUpTrayIcon style={{ width: 16, height: 16 }} />
+            </button>
+            <button className="header-btn" onClick={signOut} title="Sign out">
+              <ArrowRightOnRectangleIcon style={{ width: 16, height: 16 }} />
             </button>
           </div>
         </div>

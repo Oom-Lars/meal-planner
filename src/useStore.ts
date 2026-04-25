@@ -1,111 +1,113 @@
 import { useState, useEffect } from 'react';
+import { ref, onValue, set } from 'firebase/database';
 import type { AppData, Meal, ShoppingItem } from './types';
 import { defaultData } from './data';
+import { db } from './firebase';
 
-const STORAGE_KEY = 'meal-planner-data';
-
-function loadData(): AppData {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) return JSON.parse(raw);
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  } catch (_e) {
-    // ignore parse errors, fall back to defaults
-  }
-  return defaultData;
-}
-
-function saveData(data: AppData) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-}
+const DB_PATH = 'mealplanner';
 
 export function useStore() {
-  const [data, setData] = useState<AppData>(loadData);
+  const [data, setData] = useState<AppData>(defaultData);
+  const [synced, setSynced] = useState(false);
 
+  // Subscribe to Firebase — updates in real time across all devices
   useEffect(() => {
-    saveData(data);
-  }, [data]);
+    const dbRef = ref(db, DB_PATH);
+    const unsub = onValue(dbRef, (snapshot) => {
+      if (snapshot.exists()) {
+        setData(snapshot.val() as AppData);
+      } else {
+        // First time — write the default data to Firebase
+        set(dbRef, defaultData);
+      }
+      setSynced(true);
+    });
+    return unsub;
+  }, []);
 
-  const updateItemQuantity = (week: number, itemId: string, quantity: string) => {
-    setData(prev => ({
-      ...prev,
-      weekShops: prev.weekShops.map(ws =>
-        ws.week === week
-          ? { ...ws, items: ws.items.map(i => i.id === itemId ? { ...i, quantity } : i) }
-          : ws
-      ),
-    }));
+  // Write full data back to Firebase on every change (after initial sync)
+  const persist = (updated: AppData) => {
+    setData(updated);
+    set(ref(db, DB_PATH), updated);
   };
 
   const updateItemPrice = (week: number, itemId: string, price: number) => {
-    setData(prev => ({
-      ...prev,
-      weekShops: prev.weekShops.map(ws =>
+    persist({
+      ...data,
+      weekShops: data.weekShops.map(ws =>
         ws.week === week
           ? { ...ws, items: ws.items.map(i => i.id === itemId ? { ...i, price } : i) }
           : ws
       ),
-    }));
+    });
+  };
+
+  const updateItemQuantity = (week: number, itemId: string, quantity: string) => {
+    persist({
+      ...data,
+      weekShops: data.weekShops.map(ws =>
+        ws.week === week
+          ? { ...ws, items: ws.items.map(i => i.id === itemId ? { ...i, quantity } : i) }
+          : ws
+      ),
+    });
   };
 
   const toggleItemChecked = (week: number, itemId: string) => {
-    setData(prev => ({
-      ...prev,
-      weekShops: prev.weekShops.map(ws =>
+    persist({
+      ...data,
+      weekShops: data.weekShops.map(ws =>
         ws.week === week
           ? { ...ws, items: ws.items.map(i => i.id === itemId ? { ...i, checked: !i.checked } : i) }
           : ws
       ),
-    }));
+    });
   };
 
   const resetChecks = (week: number) => {
-    setData(prev => ({
-      ...prev,
-      weekShops: prev.weekShops.map(ws =>
+    persist({
+      ...data,
+      weekShops: data.weekShops.map(ws =>
         ws.week === week
           ? { ...ws, items: ws.items.map(i => ({ ...i, checked: false })) }
           : ws
       ),
-    }));
+    });
   };
 
   const addMeal = (meal: Meal) => {
-    setData(prev => ({
-      ...prev,
-      meals: [...prev.meals, meal],
-    }));
+    persist({ ...data, meals: [...data.meals, meal] });
   };
 
   const addShoppingItem = (week: number, item: ShoppingItem) => {
-    setData(prev => ({
-      ...prev,
-      weekShops: prev.weekShops.map(ws =>
+    persist({
+      ...data,
+      weekShops: data.weekShops.map(ws =>
         ws.week === week ? { ...ws, items: [...ws.items, item] } : ws
       ),
-    }));
+    });
   };
 
   const updateShoppingItem = (week: number, item: ShoppingItem) => {
-    setData(prev => ({
-      ...prev,
-      weekShops: prev.weekShops.map(ws =>
+    persist({
+      ...data,
+      weekShops: data.weekShops.map(ws =>
         ws.week === week
           ? { ...ws, items: ws.items.map(i => i.id === item.id ? item : i) }
           : ws
       ),
-    }));
+    });
   };
 
   const deleteShoppingItem = (week: number, itemId: string) => {
-    setData(prev => ({
-      ...prev,
-      weekShops: prev.weekShops.map(ws =>
+    persist({
+      ...data,
+      weekShops: data.weekShops.map(ws =>
         ws.week === week
           ? { ...ws, items: ws.items.filter(i => i.id !== itemId) }
           : ws
       ),
-    }));
+    });
   };
 
   const exportData = () => {
@@ -118,10 +120,10 @@ export function useStore() {
     URL.revokeObjectURL(url);
   };
 
-  const importData = (json: string) => {
+  const importData = (json: string): boolean => {
     try {
       const parsed = JSON.parse(json) as AppData;
-      setData(parsed);
+      persist(parsed);
       return true;
     } catch {
       return false;
@@ -130,8 +132,9 @@ export function useStore() {
 
   return {
     data,
-    updateItemQuantity,
+    synced,
     updateItemPrice,
+    updateItemQuantity,
     toggleItemChecked,
     resetChecks,
     addMeal,
