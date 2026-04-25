@@ -28,7 +28,7 @@ export default function ShoppingView({
   // Parse kg value out of a quantity string like "1.5 kg", "500g", "1–1.2 kg"
   const parseKg = (quantity: string): number | null => {
     // handle ranges like "1–1.2 kg" — take the average
-    const rangeMatch = quantity.match(/([\d.]+)[–\-]([\d.]+)\s*kg/i);
+    const rangeMatch = quantity.match(/([\d.]+)[–-]([\d.]+)\s*kg/i);
     if (rangeMatch) return (parseFloat(rangeMatch[1]) + parseFloat(rangeMatch[2])) / 2;
     const kgMatch = quantity.match(/([\d.]+)\s*kg/i);
     if (kgMatch) return parseFloat(kgMatch[1]);

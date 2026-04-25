@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import type { AppData, Meal, ShoppingItem, WeekShop, Ingredient } from './types';
+import type { AppData, Meal, ShoppingItem } from './types';
 import { defaultData } from './data';
 
 const STORAGE_KEY = 'meal-planner-data';
@@ -8,7 +8,10 @@ function loadData(): AppData {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) return JSON.parse(raw);
-  } catch {}
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  } catch (_e) {
+    // ignore parse errors, fall back to defaults
+  }
   return defaultData;
 }
 
@@ -68,14 +71,6 @@ export function useStore() {
   };
 
   const addMeal = (meal: Meal) => {
-    const newWeekShop: WeekShop = {
-      week: data.weekShops.length + 1,
-      items: meal.ingredients.map((ing, idx) => ({
-        ...ing,
-        id: `custom-w${data.weekShops.length + 1}-${idx}`,
-        checked: false,
-      })),
-    };
     setData(prev => ({
       ...prev,
       meals: [...prev.meals, meal],

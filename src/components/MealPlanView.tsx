@@ -3,9 +3,7 @@ import {
   FireIcon, ArrowPathIcon, BoltIcon, StarIcon,
   CalendarDaysIcon,
 } from '@heroicons/react/24/outline';
-import {
-  CheckCircleIcon as CheckCircleSolid,
-} from '@heroicons/react/24/solid';
+
 
 interface Props { data: AppData }
 
