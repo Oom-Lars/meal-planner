@@ -1,4 +1,4 @@
-import { UtensilsCrossedIcon } from '@heroicons/react/24/outline';
+import { SparklesIcon } from '@heroicons/react/24/outline';
 
 interface Props {
   onSignIn: () => void;
@@ -9,7 +9,7 @@ export default function LoginScreen({ onSignIn }: Props) {
     <div className="login-screen">
       <div className="login-card">
         <div className="login-logo">
-          <UtensilsCrossedIcon style={{ width: 36, height: 36 }} />
+          <SparklesIcon style={{ width: 36, height: 36 }} />
         </div>
         <h1 className="login-title">Meal Planner</h1>
         <p className="login-subtitle">Family Kitchen</p>
