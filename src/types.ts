@@ -8,7 +8,7 @@ export interface Meal {
 
 export interface MealPlanDay {
   week: number;
-  day: number;
+  day: number;       // 1-based day within the plan (1–28)
   mealId: string;
   note: NoteType;
 }
@@ -31,8 +31,19 @@ export interface WeekShop {
   items: ShoppingItem[];
 }
 
-export interface AppData {
-  meals: Meal[];
+export interface MonthRecord {
+  id: string;          // e.g. "2025-06"
+  label: string;       // e.g. "June 2025"
+  startDate: string;   // ISO date string of plan day 1
   mealPlan: MealPlanDay[];
   weekShops: WeekShop[];
+}
+
+export interface AppData {
+  meals: Meal[];
+  // Legacy flat fields kept for backward compat, new data uses months[]
+  mealPlan: MealPlanDay[];
+  weekShops: WeekShop[];
+  months?: MonthRecord[];
+  activeMonthId?: string;
 }

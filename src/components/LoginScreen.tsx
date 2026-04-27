@@ -2,9 +2,10 @@ import { SparklesIcon } from '@heroicons/react/24/outline';
 
 interface Props {
   onSignIn: () => void;
+  denied?: boolean;
 }
 
-export default function LoginScreen({ onSignIn }: Props) {
+export default function LoginScreen({ onSignIn, denied }: Props) {
   return (
     <div className="login-screen">
       <div className="login-card">
@@ -13,6 +14,13 @@ export default function LoginScreen({ onSignIn }: Props) {
         </div>
         <h1 className="login-title">Meal Planner</h1>
         <p className="login-subtitle">Family Kitchen</p>
+
+        {denied && (
+          <div className="login-denied">
+            That Google account isn't on the household list. Ask Lars to add you.
+          </div>
+        )}
+
         <p className="login-desc">
           Sign in with your Google account to access your shared family meal plan.
         </p>

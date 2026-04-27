@@ -2,11 +2,14 @@ import { useState } from 'react';
 import type { AppData, ShoppingItem } from '../types';
 import {
   CheckCircleIcon, PlusIcon, TrashIcon, ArrowPathIcon,
+  ChevronLeftIcon, ChevronRightIcon,
 } from '@heroicons/react/24/outline';
 import { CheckCircleIcon as CheckCircleSolid } from '@heroicons/react/24/solid';
+import { safeItems } from '../utils/dateUtils';
 
 interface Props {
   data: AppData;
+  setActiveMonth: (id: string) => void;
   updateItemPrice: (week: number, itemId: string, price: number) => void;
   updateItemQuantity: (week: number, itemId: string, quantity: string) => void;
   toggleItemChecked: (week: number, itemId: string) => void;
@@ -18,16 +21,33 @@ interface Props {
 const CATEGORIES = ['Meat', 'Vegetables', 'Carbs', 'Pantry', 'Dairy', 'Other'];
 
 export default function ShoppingView({
-  data, updateItemPrice, updateItemQuantity, toggleItemChecked, resetChecks, addShoppingItem, deleteShoppingItem,
+  data, setActiveMonth,
+  updateItemPrice, updateItemQuantity, toggleItemChecked,
+  resetChecks, addShoppingItem, deleteShoppingItem,
 }: Props) {
   const [activeWeek, setActiveWeek] = useState(1);
   const [editingPrice, setEditingPrice] = useState<string | null>(null);
   const [priceInput, setPriceInput] = useState('');
   const [pricePerKgInput, setPricePerKgInput] = useState('');
+  const [editingQty, setEditingQty] = useState<string | null>(null);
+  const [qtyInput, setQtyInput] = useState('');
+  const [showAddItem, setShowAddItem] = useState(false);
+  const [newItem, setNewItem] = useState({ category: 'Vegetables', item: '', quantity: '', notes: '' });
 
-  // Parse kg value out of a quantity string like "1.5 kg", "500g", "1–1.2 kg"
+  // Month nav
+  const months = data.months ?? [];
+  const activeId = data.activeMonthId;
+  const activeMonth = months.find(m => m.id === activeId) ?? months[months.length - 1];
+  const activeIdx = months.findIndex(m => m.id === activeMonth?.id);
+  const canPrev = activeIdx > 0;
+  const canNext = activeIdx < months.length - 1;
+
+  // Use active month's weekShops, fall back to legacy
+  const weekShops = activeMonth?.weekShops ?? data.weekShops;
+  const shopItems = safeItems(weekShops, activeWeek);
+  const shop = { week: activeWeek, items: shopItems };
+
   const parseKg = (quantity: string): number | null => {
-    // handle ranges like "1–1.2 kg" — take the average
     const rangeMatch = quantity.match(/([\d.]+)[–-]([\d.]+)\s*kg/i);
     if (rangeMatch) return (parseFloat(rangeMatch[1]) + parseFloat(rangeMatch[2])) / 2;
     const kgMatch = quantity.match(/([\d.]+)\s*kg/i);
@@ -43,13 +63,6 @@ export default function ShoppingView({
     const kg = parseKg(itemQty);
     if (kg) setPriceInput((perKg * kg).toFixed(2));
   };
-  const [editingQty, setEditingQty] = useState<string | null>(null);
-  const [qtyInput, setQtyInput] = useState('');
-  const [showAddItem, setShowAddItem] = useState(false);
-  const [newItem, setNewItem] = useState({ category: 'Vegetables', item: '', quantity: '', notes: '' });
-
-  const shop = data.weekShops.find(w => w.week === activeWeek);
-  if (!shop) return null;
 
   const grouped = CATEGORIES.reduce<Record<string, ShoppingItem[]>>((acc, cat) => {
     const items = shop.items.filter(i => i.category === cat);
@@ -100,6 +113,24 @@ export default function ShoppingView({
         <div className="page-subtitle">Tap items to check off · tap price to edit</div>
       </div>
 
+      {/* Month nav */}
+      {months.length > 0 && (
+        <div className="month-nav">
+          <button className="month-nav-btn" disabled={!canPrev}
+            onClick={() => canPrev && setActiveMonth(months[activeIdx - 1].id)}>
+            <ChevronLeftIcon style={{ width: 18, height: 18 }} />
+          </button>
+          <div className="month-nav-label">
+            <span className="month-nav-title">{activeMonth?.label ?? 'Shopping'}</span>
+            <span className="month-nav-sub">Shopping list</span>
+          </div>
+          <button className="month-nav-btn" disabled={!canNext}
+            onClick={() => canNext && setActiveMonth(months[activeIdx + 1].id)}>
+            <ChevronRightIcon style={{ width: 18, height: 18 }} />
+          </button>
+        </div>
+      )}
+
       <div className="week-tabs">
         {[1, 2, 3, 4].map(w => (
           <button key={w} className={`week-tab ${activeWeek === w ? 'active' : ''}`} onClick={() => setActiveWeek(w)}>
@@ -145,19 +176,14 @@ export default function ShoppingView({
                 <div className="item-name">{item.item}</div>
                 <div className="item-meta">
                   {editingQty === item.id ? (
-                    <input
-                      className="qty-input"
-                      value={qtyInput}
+                    <input className="qty-input" value={qtyInput}
                       onChange={e => setQtyInput(e.target.value)}
                       onBlur={() => saveQtyAndClose(item.id)}
                       onKeyDown={e => e.key === 'Enter' && saveQtyAndClose(item.id)}
-                      autoFocus
-                    />
+                      autoFocus />
                   ) : (
-                    <button
-                      className="qty-btn"
-                      onClick={() => { setEditingQty(item.id); setQtyInput(item.quantity); }}
-                    >
+                    <button className="qty-btn"
+                      onClick={() => { setEditingQty(item.id); setQtyInput(item.quantity); }}>
                       {item.quantity}
                     </button>
                   )}
@@ -172,50 +198,29 @@ export default function ShoppingView({
                       <div className="pkg-row">
                         <div className="price-edit-wrap pkg-input-wrap">
                           <span className="currency-sym">R</span>
-                          <input
-                            type="number"
-                            className="price-input"
-                            placeholder="per kg"
+                          <input type="number" className="price-input" placeholder="per kg"
                             value={pricePerKgInput}
-                            onChange={e => {
-                              setPricePerKgInput(e.target.value);
-                            }}
+                            onChange={e => setPricePerKgInput(e.target.value)}
                             onKeyDown={e => e.key === 'Enter' && calcPriceFromKg(item.quantity)}
-                            min="0"
-                            step="0.01"
-                          />
+                            min="0" step="0.01" />
                           <span className="pkg-label">/kg</span>
                         </div>
-                        <button
-                          className="pkg-calc-btn"
-                          onClick={() => calcPriceFromKg(item.quantity)}
-                          title="Calculate total from price/kg"
-                        >
-                          =
-                        </button>
+                        <button className="pkg-calc-btn" onClick={() => calcPriceFromKg(item.quantity)} title="Calculate">=</button>
                       </div>
                     )}
                     <div className="price-edit-wrap">
                       <span className="currency-sym">R</span>
-                      <input
-                        type="number"
-                        className="price-input"
-                        placeholder="total"
+                      <input type="number" className="price-input" placeholder="total"
                         value={priceInput}
                         onChange={e => setPriceInput(e.target.value)}
                         onBlur={() => savePriceAndClose(item.id)}
                         onKeyDown={e => e.key === 'Enter' && savePriceAndClose(item.id)}
-                        autoFocus={cat !== 'Meat'}
-                        min="0"
-                        step="0.01"
-                      />
+                        autoFocus={cat !== 'Meat'} min="0" step="0.01" />
                     </div>
                   </div>
                 ) : (
-                  <button
-                    className="price-btn"
-                    onClick={() => { setEditingPrice(item.id); setPriceInput(item.price?.toString() ?? ''); setPricePerKgInput(''); }}
-                  >
+                  <button className="price-btn"
+                    onClick={() => { setEditingPrice(item.id); setPriceInput(item.price?.toString() ?? ''); setPricePerKgInput(''); }}>
                     {item.price != null && item.price > 0
                       ? `R ${item.price.toFixed(2)}`
                       : <span className="price-empty">+ price</span>}

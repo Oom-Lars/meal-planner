@@ -3,14 +3,19 @@ import type { AppData, Meal, Ingredient } from '../types';
 import {
   ChevronDownIcon, PlusIcon, TrashIcon,
   BeakerIcon, FireIcon, GlobeAltIcon, ArchiveBoxIcon,
-  CubeIcon, SparklesIcon,
+  CubeIcon, SparklesIcon, PencilSquareIcon, CheckIcon, XMarkIcon,
 } from '@heroicons/react/24/outline';
 
-interface Props { data: AppData; addMeal: (meal: Meal) => void }
+interface Props {
+  data: AppData;
+  addMeal: (meal: Meal) => void;
+  updateMeal: (meal: Meal) => void;
+  highlightMealId?: string | null;
+  onHighlightClear?: () => void;
+}
 
 const CATEGORIES = ['Meat', 'Vegetables', 'Carbs', 'Pantry', 'Dairy', 'Other'];
 
-// Icon per category for the meal card icon area
 const CAT_ICONS: Record<string, React.ReactNode> = {
   'Meat':       <FireIcon className="meal-type-icon" />,
   'Vegetables': <BeakerIcon className="meal-type-icon" />,
@@ -20,21 +25,38 @@ const CAT_ICONS: Record<string, React.ReactNode> = {
   'Other':      <SparklesIcon className="meal-type-icon" />,
 };
 
-// Derive a representative icon from the first ingredient's category
 function getMealIcon(meal: Meal) {
-  const firstCat = meal.ingredients[0]?.category ?? 'Other';
-  return CAT_ICONS[firstCat] ?? CAT_ICONS['Other'];
+  const cat = meal.ingredients[0]?.category ?? 'Other';
+  return CAT_ICONS[cat] ?? CAT_ICONS['Other'];
 }
 
-export default function MealsView({ data, addMeal }: Props) {
-  const [expanded, setExpanded] = useState<string | null>(null);
+export default function MealsView({ data, addMeal, updateMeal, highlightMealId, onHighlightClear }: Props) {
+  const [expanded, setExpanded] = useState<string | null>(highlightMealId ?? null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editIngredients, setEditIngredients] = useState<Ingredient[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [mealName, setMealName] = useState('');
   const [ingredients, setIngredients] = useState<Omit<Ingredient, 'id'>[]>([
     { category: 'Meat', item: '', quantity: '', notes: '' },
   ]);
 
-  const toggle = (id: string) => setExpanded(p => p === id ? null : id);
+  const toggle = (id: string) => {
+    setExpanded(p => p === id ? null : id);
+    if (onHighlightClear) onHighlightClear();
+  };
+
+  const startEdit = (meal: Meal) => {
+    setEditingId(meal.id);
+    setEditIngredients([...meal.ingredients]);
+  };
+
+  const saveEdit = (meal: Meal) => {
+    updateMeal({ ...meal, ingredients: editIngredients.filter(i => i.item.trim()) });
+    setEditingId(null);
+  };
+
+  const updateEditIng = (idx: number, field: string, value: string) =>
+    setEditIngredients(p => p.map((ing, i) => i === idx ? { ...ing, [field]: value } : ing));
 
   const updateIng = (idx: number, field: string, value: string) =>
     setIngredients(p => p.map((ing, i) => i === idx ? { ...ing, [field]: value } : ing));
@@ -63,12 +85,12 @@ export default function MealsView({ data, addMeal }: Props) {
       <div className="meals-grid">
         {data.meals.map(meal => {
           const isOpen = expanded === meal.id;
+          const isEditing = editingId === meal.id;
+          const isHighlighted = highlightMealId === meal.id;
           return (
-            <div key={meal.id} className="meal-card">
+            <div key={meal.id} className={`meal-card ${isHighlighted ? 'highlighted' : ''}`}>
               <button className="meal-card-header" onClick={() => toggle(meal.id)}>
-                <div className="meal-card-icon">
-                  {getMealIcon(meal)}
-                </div>
+                <div className="meal-card-icon">{getMealIcon(meal)}</div>
                 <div className="meal-card-info">
                   <div className="meal-card-name">{meal.name}</div>
                   <div className="meal-card-meta">{meal.ingredients.length} ingredients</div>
@@ -78,15 +100,57 @@ export default function MealsView({ data, addMeal }: Props) {
 
               {isOpen && (
                 <div className="meal-ingredients">
-                  {meal.ingredients.map(ing => (
-                    <div key={ing.id} className="ingredient-row">
-                      <span className={`ing-cat-pill ing-${ing.category.replace(/\s+/g, '')}`}>
-                        {ing.category}
-                      </span>
-                      <span className="ing-name">{ing.item}</span>
-                      <span className="ing-qty">{ing.quantity}</span>
+                  {isEditing ? (
+                    <div className="edit-ingredients-form">
+                      {editIngredients.map((ing, idx) => (
+                        <div key={ing.id} className="form-row" style={{ padding: '4px 12px' }}>
+                          <select className="form-select" value={ing.category}
+                            onChange={e => updateEditIng(idx, 'category', e.target.value)}
+                            style={{ flex: '0 0 auto', width: 100 }}>
+                            {CATEGORIES.map(c => <option key={c}>{c}</option>)}
+                          </select>
+                          <input className="form-input" value={ing.item}
+                            onChange={e => updateEditIng(idx, 'item', e.target.value)} placeholder="Item" />
+                          <input className="form-input" value={ing.quantity}
+                            onChange={e => updateEditIng(idx, 'quantity', e.target.value)}
+                            placeholder="Qty" style={{ flex: '0 0 68px' }} />
+                          <button className="delete-btn"
+                            onClick={() => setEditIngredients(p => p.filter((_, i) => i !== idx))}>
+                            <TrashIcon style={{ width: 14, height: 14 }} />
+                          </button>
+                        </div>
+                      ))}
+                      <div style={{ padding: '6px 12px', display: 'flex', gap: 8 }}>
+                        <button className="add-ing-btn" onClick={() =>
+                          setEditIngredients(p => [...p, { id: `ing-${Date.now()}`, category: 'Vegetables', item: '', quantity: '', notes: '' }])}>
+                          <PlusIcon style={{ width: 13, height: 13 }} /> Add
+                        </button>
+                        <button className="ing-save-btn" onClick={() => saveEdit(meal)}>
+                          <CheckIcon style={{ width: 14, height: 14 }} /> Save
+                        </button>
+                        <button className="ing-cancel-btn" onClick={() => setEditingId(null)}>
+                          <XMarkIcon style={{ width: 14, height: 14 }} /> Cancel
+                        </button>
+                      </div>
                     </div>
-                  ))}
+                  ) : (
+                    <>
+                      {meal.ingredients.map(ing => (
+                        <div key={ing.id} className="ingredient-row">
+                          <span className={`ing-cat-pill ing-${ing.category.replace(/\s+/g, '')}`}>
+                            {ing.category}
+                          </span>
+                          <span className="ing-name">{ing.item}</span>
+                          <span className="ing-qty">{ing.quantity}</span>
+                        </div>
+                      ))}
+                      <div style={{ padding: '8px 14px' }}>
+                        <button className="edit-meal-btn" onClick={() => startEdit(meal)}>
+                          <PencilSquareIcon style={{ width: 14, height: 14 }} /> Edit Ingredients
+                        </button>
+                      </div>
+                    </>
+                  )}
                 </div>
               )}
             </div>
@@ -99,7 +163,6 @@ export default function MealsView({ data, addMeal }: Props) {
           <div className="form-card-title">New Meal</div>
           <input className="form-input" placeholder="Meal name *" value={mealName}
             onChange={e => setMealName(e.target.value)} />
-
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {ingredients.map((ing, idx) => (
               <div key={idx} className="form-row">
@@ -113,19 +176,17 @@ export default function MealsView({ data, addMeal }: Props) {
                 <input className="form-input" placeholder="Qty" value={ing.quantity}
                   onChange={e => updateIng(idx, 'quantity', e.target.value)}
                   style={{ flex: '0 0 72px' }} />
-                <button className="delete-btn" onClick={() =>
-                  setIngredients(p => p.filter((_, i) => i !== idx))}>
-                  <TrashIcon style={{ width: 15, height: 15 }} />
+                <button className="delete-btn"
+                  onClick={() => setIngredients(p => p.filter((_, i) => i !== idx))}>
+                  <TrashIcon style={{ width: 14, height: 14 }} />
                 </button>
               </div>
             ))}
           </div>
-
           <button className="add-ing-btn" onClick={() =>
             setIngredients(p => [...p, { category: 'Vegetables', item: '', quantity: '', notes: '' }])}>
             <PlusIcon style={{ width: 14, height: 14 }} /> Add Ingredient
           </button>
-
           <div className="form-actions">
             <button className="btn-primary" onClick={handleSave}>Save Meal</button>
             <button className="btn-secondary" onClick={() => setShowForm(false)}>Cancel</button>

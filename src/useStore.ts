@@ -1,23 +1,26 @@
 import { useState, useEffect } from 'react';
 import { ref, onValue, set } from 'firebase/database';
-import type { AppData, Meal, ShoppingItem } from './types';
+import type { AppData, Meal, ShoppingItem, MonthRecord } from './types';
 import { defaultData } from './data';
 import { db } from './firebase';
 
 const DB_PATH = 'mealplanner';
 
+/** Remove all undefined values recursively so Firebase doesn't reject them */
+function stripUndefined<T>(obj: T): T {
+  return JSON.parse(JSON.stringify(obj)) as T;
+}
+
 export function useStore() {
   const [data, setData] = useState<AppData>(defaultData);
   const [synced, setSynced] = useState(false);
 
-  // Subscribe to Firebase — updates in real time across all devices
   useEffect(() => {
     const dbRef = ref(db, DB_PATH);
     const unsub = onValue(dbRef, (snapshot) => {
       if (snapshot.exists()) {
         setData(snapshot.val() as AppData);
       } else {
-        // First time — write the default data to Firebase
         set(dbRef, defaultData);
       }
       setSynced(true);
@@ -25,123 +28,121 @@ export function useStore() {
     return unsub;
   }, []);
 
-  // Write full data back to Firebase on every change (after initial sync)
   const persist = (updated: AppData) => {
-    setData(updated);
-    set(ref(db, DB_PATH), updated);
+    const clean = stripUndefined(updated);
+    setData(clean);
+    set(ref(db, DB_PATH), clean);
+  };
+
+  // ── Active month helpers ──
+  const activeMonth = (): MonthRecord | undefined => {
+    if (!data.months?.length) return undefined;
+    return data.months.find(m => m.id === data.activeMonthId) ?? data.months[data.months.length - 1];
+  };
+
+  const upsertMonth = (month: MonthRecord) => {
+    const months = [...(data.months ?? [])];
+    const idx = months.findIndex(m => m.id === month.id);
+    if (idx >= 0) months[idx] = month;
+    else months.push(month);
+    persist({ ...data, months, activeMonthId: month.id });
+  };
+
+  const setActiveMonth = (id: string) => persist({ ...data, activeMonthId: id });
+
+  const deleteMonth = (id: string) => {
+    const months = (data.months ?? []).filter(m => m.id !== id);
+    const activeMonthId = months.length > 0 ? months[months.length - 1].id : undefined;
+    persist({ ...data, months, activeMonthId });
+  };
+
+  // ── Shopping ──
+  const getShop = (week: number): ShoppingItem[] => {
+    const am = activeMonth();
+    if (am) return am.weekShops.find(w => w.week === week)?.items ?? [];
+    return data.weekShops.find(w => w.week === week)?.items ?? [];
+  };
+
+  const updateMonthShop = (week: number, items: ShoppingItem[]) => {
+    const am = activeMonth();
+    if (am) {
+      upsertMonth({
+        ...am,
+        weekShops: am.weekShops.map(ws => ws.week === week ? { ...ws, items } : ws),
+      });
+    } else {
+      persist({
+        ...data,
+        weekShops: data.weekShops.map(ws => ws.week === week ? { ...ws, items } : ws),
+      });
+    }
   };
 
   const updateItemPrice = (week: number, itemId: string, price: number) => {
-    persist({
-      ...data,
-      weekShops: data.weekShops.map(ws =>
-        ws.week === week
-          ? { ...ws, items: ws.items.map(i => i.id === itemId ? { ...i, price } : i) }
-          : ws
-      ),
-    });
+    const items = getShop(week).map(i => i.id === itemId ? { ...i, price } : i);
+    updateMonthShop(week, items);
   };
 
   const updateItemQuantity = (week: number, itemId: string, quantity: string) => {
-    persist({
-      ...data,
-      weekShops: data.weekShops.map(ws =>
-        ws.week === week
-          ? { ...ws, items: ws.items.map(i => i.id === itemId ? { ...i, quantity } : i) }
-          : ws
-      ),
-    });
+    const items = getShop(week).map(i => i.id === itemId ? { ...i, quantity } : i);
+    updateMonthShop(week, items);
   };
 
   const toggleItemChecked = (week: number, itemId: string) => {
-    persist({
-      ...data,
-      weekShops: data.weekShops.map(ws =>
-        ws.week === week
-          ? { ...ws, items: ws.items.map(i => i.id === itemId ? { ...i, checked: !i.checked } : i) }
-          : ws
-      ),
-    });
+    const items = getShop(week).map(i => i.id === itemId ? { ...i, checked: !i.checked } : i);
+    updateMonthShop(week, items);
   };
 
   const resetChecks = (week: number) => {
-    persist({
-      ...data,
-      weekShops: data.weekShops.map(ws =>
-        ws.week === week
-          ? { ...ws, items: ws.items.map(i => ({ ...i, checked: false })) }
-          : ws
-      ),
-    });
-  };
-
-  const addMeal = (meal: Meal) => {
-    persist({ ...data, meals: [...data.meals, meal] });
+    const items = getShop(week).map(i => ({ ...i, checked: false }));
+    updateMonthShop(week, items);
   };
 
   const addShoppingItem = (week: number, item: ShoppingItem) => {
-    persist({
-      ...data,
-      weekShops: data.weekShops.map(ws =>
-        ws.week === week ? { ...ws, items: [...ws.items, item] } : ws
-      ),
-    });
-  };
-
-  const updateShoppingItem = (week: number, item: ShoppingItem) => {
-    persist({
-      ...data,
-      weekShops: data.weekShops.map(ws =>
-        ws.week === week
-          ? { ...ws, items: ws.items.map(i => i.id === item.id ? item : i) }
-          : ws
-      ),
-    });
+    const items = [...getShop(week), item];
+    updateMonthShop(week, items);
   };
 
   const deleteShoppingItem = (week: number, itemId: string) => {
-    persist({
-      ...data,
-      weekShops: data.weekShops.map(ws =>
-        ws.week === week
-          ? { ...ws, items: ws.items.filter(i => i.id !== itemId) }
-          : ws
-      ),
-    });
+    const items = getShop(week).filter(i => i.id !== itemId);
+    updateMonthShop(week, items);
   };
 
+  const addShoppingItems = (week: number, newItems: ShoppingItem[]) => {
+    const items = [...getShop(week), ...newItems];
+    updateMonthShop(week, items);
+  };
+
+  // ── Meals ──
+  const addMeal = (meal: Meal) => persist({ ...data, meals: [...data.meals, meal] });
+
+  const updateMeal = (meal: Meal) => {
+    persist({ ...data, meals: data.meals.map(m => m.id === meal.id ? meal : m) });
+  };
+
+  // ── Export / Import ──
   const exportData = () => {
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = url;
-    a.download = 'meal-planner-data.json';
-    a.click();
+    a.href = url; a.download = 'meal-planner-data.json'; a.click();
     URL.revokeObjectURL(url);
   };
 
   const importData = (json: string): boolean => {
-    try {
-      const parsed = JSON.parse(json) as AppData;
-      persist(parsed);
-      return true;
-    } catch {
-      return false;
-    }
+    try { persist(JSON.parse(json) as AppData); return true; }
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    catch (_e) { return false; }
   };
 
   return {
-    data,
-    synced,
-    updateItemPrice,
-    updateItemQuantity,
-    toggleItemChecked,
-    resetChecks,
-    addMeal,
-    addShoppingItem,
-    updateShoppingItem,
-    deleteShoppingItem,
-    exportData,
-    importData,
+    data, synced,
+    activeMonth,
+    upsertMonth, setActiveMonth, deleteMonth,
+    updateItemPrice, updateItemQuantity,
+    toggleItemChecked, resetChecks,
+    addShoppingItem, addShoppingItems, deleteShoppingItem,
+    addMeal, updateMeal,
+    exportData, importData,
   };
 }
