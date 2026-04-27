@@ -95,8 +95,9 @@ export default function MealPlanView({ data, upsertMonth, setActiveMonth, delete
   // Use legacy data if no months set up yet
   const mealPlan = activeMonth?.mealPlan ?? data.mealPlan;
   const startDate = activeMonth?.startDate;
+  const hasLegacyPlan = data.mealPlan && data.mealPlan.length > 0;
 
-  if (!activeMonth && months.length === 0) {
+  if (!activeMonth && months.length === 0 && !hasLegacyPlan) {
     return (
       <div className="view-container">
         <div className="page-header">

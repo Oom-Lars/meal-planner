@@ -26,7 +26,7 @@ export default function SpendingView({ data, setActiveMonth }: Props) {
   const canNext = activeIdx < months.length - 1;
 
   // Use active month shops or fall back to legacy
-  const weekShops = activeMonth?.weekShops ?? data.weekShops;
+  const weekShops = activeMonth?.weekShops ?? data.weekShops ?? [];
 
   const weekTotals = weekShops.map(ws => ({
     week: ws.week,

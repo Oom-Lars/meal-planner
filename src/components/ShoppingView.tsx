@@ -43,7 +43,7 @@ export default function ShoppingView({
   const canNext = activeIdx < months.length - 1;
 
   // Use active month's weekShops, fall back to legacy
-  const weekShops = activeMonth?.weekShops ?? data.weekShops;
+  const weekShops = activeMonth?.weekShops ?? data.weekShops ?? [];
   const shopItems = safeItems(weekShops, activeWeek);
   const shop = { week: activeWeek, items: shopItems };
 

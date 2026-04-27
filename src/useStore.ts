@@ -45,6 +45,22 @@ export function useStore() {
     const idx = months.findIndex(m => m.id === month.id);
     if (idx >= 0) months[idx] = month;
     else months.push(month);
+
+    // If this is the first month being created and legacy data exists,
+    // migrate it as a "Month 0" entry so it appears in analytics history
+    const hasLegacy = (data.mealPlan?.length ?? 0) > 0;
+    const alreadyMigrated = months.some(m => m.id === 'legacy');
+    if (hasLegacy && !alreadyMigrated && months.length === 1) {
+      const legacyMonth: MonthRecord = {
+        id: 'legacy',
+        label: 'Previous Month',
+        startDate: new Date(Date.now() - 28 * 86400000).toISOString().split('T')[0],
+        mealPlan: data.mealPlan ?? [],
+        weekShops: data.weekShops ?? [],
+      };
+      months.unshift(legacyMonth);
+    }
+
     persist({ ...data, months, activeMonthId: month.id });
   };
 
