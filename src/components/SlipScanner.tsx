@@ -20,49 +20,38 @@ interface ParsedItem {
 
 const CATEGORIES = ['Meat', 'Vegetables', 'Carbs', 'Pantry', 'Dairy', 'Other'];
 
+// Models to try in order — falls back if one is overloaded
+const MODELS = ['gemini-2.5-flash-lite', 'gemini-2.5-flash', 'gemini-3-flash'];
+
+const PROMPT = `You are a grocery receipt and shopping order parser for South African stores like PnP (Pick n Pay).
+
+Look at this image carefully. It may be:
+1. A PnP ASAP app order screenshot — items show as "Product Name Xg/Xml/XL" with a price on the right and "X/X items" below
+2. A till slip / receipt — items listed with prices
+
+Extract ALL grocery items. For PnP app screenshots, the quantity and unit are usually embedded in the product name (e.g. "PnP Full Cream Fresh Milk 2L" → quantity: "2 L", item: "Full Cream Milk").
+
+Return ONLY a valid JSON array, no markdown, no explanation. Each object must have:
+- "item": string (short clean product name, remove brand prefixes like "PnP" where possible)
+- "quantity": string in format "NUMBER UNIT" where UNIT is one of: kg, g, L, ml, head, pack, packet, bag, bulb, can, bottle, box, sachet, each
+- "price": number (use the discounted/actual price, not the crossed-out original)
+- "category": one of exactly: "Meat", "Vegetables", "Carbs", "Pantry", "Dairy", "Other"
+
+Examples:
+[
+  {"item":"Full Cream Milk","quantity":"2 L","price":59.00,"category":"Dairy"},
+  {"item":"Sliced Brown Bread","quantity":"700 g","price":31.98,"category":"Carbs"},
+  {"item":"Robot Peppers","quantity":"3 each","price":44.99,"category":"Vegetables"}
+]
+
+If you cannot read the image clearly, return [].`;
+
 export default function SlipScanner({ currentWeek, onConfirm, onClose }: Props) {
   const [scanning, setScanning] = useState(false);
   const [items, setItems] = useState<ParsedItem[]>([]);
   const [error, setError] = useState('');
   const [week, setWeek] = useState(currentWeek);
   const fileRef = useRef<HTMLInputElement>(null);
-
-  const handleImage = async (file: File) => {
-    setScanning(true);
-    setError('');
-    setItems([]);
-    try {
-      const base64 = await fileToBase64(file);
-      const genAI = new GoogleGenerativeAI(import.meta.env.VITE_GEMINI_API_KEY);
-      const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
-
-      const prompt = `You are a grocery receipt parser. Look at this till slip or shopping screenshot and extract all grocery items.
-Return ONLY a valid JSON array, no markdown, no explanation. Each object must have:
-- "item": string (product name, keep it short)
-- "quantity": string (e.g. "1", "2 kg", "500g", "1 pack")
-- "price": number (the price paid, as a number)
-- "category": one of exactly: "Meat", "Vegetables", "Carbs", "Pantry", "Dairy", "Other"
-
-Example: [{"item":"Chicken breast","quantity":"1 kg","price":89.99,"category":"Meat"}]
-
-If you cannot read the slip clearly, return an empty array [].`;
-
-      const result = await model.generateContent([
-        prompt,
-        { inlineData: { mimeType: file.type as 'image/jpeg' | 'image/png' | 'image/webp', data: base64 } },
-      ]);
-
-      const text = result.response.text().trim();
-      const jsonStr = text.startsWith('[') ? text : text.match(/\[[\s\S]*\]/)?.[0] ?? '[]';
-      const parsed: ParsedItem[] = JSON.parse(jsonStr);
-      setItems(parsed);
-    } catch (e) {
-      setError('Could not read the slip. Try a clearer photo.');
-      console.error(e);
-    } finally {
-      setScanning(false);
-    }
-  };
 
   const fileToBase64 = (file: File): Promise<string> =>
     new Promise((resolve, reject) => {
@@ -71,6 +60,69 @@ If you cannot read the slip clearly, return an empty array [].`;
       reader.onerror = reject;
       reader.readAsDataURL(file);
     });
+
+  const handleImage = async (file: File) => {
+    setScanning(true);
+    setError('');
+    setItems([]);
+
+    const mimeType = (file.type === 'image/heic' || file.type === 'image/heif')
+      ? 'image/jpeg'
+      : (file.type || 'image/jpeg') as 'image/jpeg' | 'image/png' | 'image/webp' | 'image/gif';
+
+    let base64: string;
+    try {
+      base64 = await fileToBase64(file);
+    } catch {
+      setError('Could not read the image file.');
+      setScanning(false);
+      return;
+    }
+
+    const genAI = new GoogleGenerativeAI(import.meta.env.VITE_GEMINI_API_KEY);
+    const imageData = { inlineData: { mimeType, data: base64 } };
+    let lastError = '';
+
+    for (const modelName of MODELS) {
+      for (let attempt = 0; attempt < 2; attempt++) {
+        try {
+          if (attempt > 0) await new Promise(r => setTimeout(r, 4000));
+          const model = genAI.getGenerativeModel({ model: modelName });
+          const result = await model.generateContent([PROMPT, imageData]);
+          const text = result.response.text().trim();
+          const cleaned = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+          const jsonStr = cleaned.startsWith('[') ? cleaned : cleaned.match(/\[[\s\S]*\]/)?.[0] ?? '[]';
+          const parsed: ParsedItem[] = JSON.parse(jsonStr);
+          if (parsed.length === 0) {
+            setError('No items found. Make sure the screenshot shows item names and prices clearly.');
+          } else {
+            setItems(parsed);
+          }
+          setScanning(false);
+          return;
+        } catch (e) {
+          const msg = (e as Error).message ?? '';
+          lastError = msg;
+          if (msg.includes('503') || msg.includes('429')) continue;
+          break; // non-retryable error — try next model
+        }
+      }
+    }
+
+    // All models failed
+    if (lastError.includes('503')) {
+      setError('AI is overloaded right now. Please try again in a minute.');
+    } else if (lastError.includes('429')) {
+      setError('Daily scan limit reached (20/day on free tier). Try again tomorrow.');
+    } else if (lastError.includes('404')) {
+      setError('AI model unavailable. Please try again shortly.');
+    } else if (lastError.includes('403') || lastError.includes('API_KEY')) {
+      setError('API key issue — check your Gemini key.');
+    } else {
+      setError(`Could not read the image: ${lastError.slice(0, 100)}`);
+    }
+    setScanning(false);
+  };
 
   const updateItem = (idx: number, field: keyof ParsedItem, value: string | number) =>
     setItems(p => p.map((it, i) => i === idx ? { ...it, [field]: value } : it));
@@ -115,8 +167,8 @@ If you cannot read the slip clearly, return an empty array [].`;
         {items.length === 0 && !scanning && (
           <div className="slip-upload-area" onClick={() => fileRef.current?.click()}>
             <CameraIcon style={{ width: 36, height: 36, color: 'var(--text-light)' }} />
-            <p className="slip-upload-text">Tap to upload a till slip or shopping screenshot</p>
-            <p className="slip-upload-sub">JPG, PNG or WebP</p>
+            <p className="slip-upload-text">Tap to upload a PnP screenshot or till slip photo</p>
+            <p className="slip-upload-sub">Any image format · screenshots work great</p>
             <input ref={fileRef} type="file" accept="image/*" style={{ display: 'none' }}
               onChange={e => e.target.files?.[0] && handleImage(e.target.files[0])} />
           </div>
@@ -129,7 +181,14 @@ If you cannot read the slip clearly, return an empty array [].`;
           </div>
         )}
 
-        {error && <div className="slip-error">{error}</div>}
+        {error && (
+          <div className="slip-error">
+            {error}
+            <button className="slip-retry-btn" onClick={() => { setError(''); fileRef.current?.click(); }}>
+              Try again
+            </button>
+          </div>
+        )}
 
         {items.length > 0 && (
           <>
@@ -166,7 +225,7 @@ If you cannot read the slip clearly, return an empty array [].`;
               <button className="btn-primary" onClick={handleConfirm}>
                 <CheckIcon style={{ width: 16, height: 16 }} /> Add {items.length} Items
               </button>
-              <button className="btn-secondary" onClick={() => { setItems([]); }}>
+              <button className="btn-secondary" onClick={() => setItems([])}>
                 Rescan
               </button>
             </div>

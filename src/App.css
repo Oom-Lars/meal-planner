@@ -1352,3 +1352,59 @@ html, body, #root {
   width: 100%;
   text-align: left;
 }
+
+/* ── Structured quantity editor ── */
+.qty-edit-wrap {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.qty-num {
+  width: 56px;
+  padding: 2px 6px;
+  border: 1.5px solid var(--blue);
+  border-radius: 5px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--blue);
+  background: var(--blue-light);
+  outline: none;
+  font-family: var(--font);
+}
+.qty-unit-select {
+  padding: 2px 4px;
+  border: 1.5px solid var(--blue);
+  border-radius: 5px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--blue);
+  background: var(--blue-light);
+  outline: none;
+  cursor: pointer;
+  font-family: var(--font);
+}
+
+/* ── Suggested price ── */
+.price-suggested {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--amber);
+  font-weight: 600;
+  font-size: 12px;
+}
+
+.slip-retry-btn {
+  display: block;
+  margin-top: 8px;
+  background: none;
+  border: 1px solid #fecaca;
+  border-radius: var(--radius-sm);
+  padding: 5px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #b91c1c;
+  cursor: pointer;
+  font-family: var(--font);
+}
+.slip-retry-btn:hover { background: #fee2e2; }

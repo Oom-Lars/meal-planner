@@ -3,6 +3,7 @@ import { ref, onValue, set } from 'firebase/database';
 import type { AppData, Meal, ShoppingItem, MonthRecord } from './types';
 import { defaultData } from './data';
 import { db } from './firebase';
+import { buildMemoryEntry, calcPriceFromMemory } from './utils/priceUtils';
 
 const DB_PATH = 'mealplanner';
 
@@ -95,8 +96,30 @@ export function useStore() {
   };
 
   const updateItemPrice = (week: number, itemId: string, price: number) => {
-    const items = getShop(week).map(i => i.id === itemId ? { ...i, price } : i);
-    updateMonthShop(week, items);
+    const shopItems = getShop(week);
+    const item = shopItems.find(i => i.id === itemId);
+    // Save to price memory
+    const newMemory = { ...(data.priceMemory ?? {}) };
+    if (item && price > 0) {
+      const entry = buildMemoryEntry(price, item.quantity);
+      if (entry) newMemory[item.item.toLowerCase().trim()] = entry;
+    }
+    const items = shopItems.map(i => i.id === itemId ? { ...i, price } : i);
+    const am = activeMonth();
+    if (am) {
+      const months = [...(data.months ?? [])];
+      const idx = months.findIndex(m => m.id === am.id);
+      if (idx >= 0) {
+        months[idx] = { ...am, weekShops: am.weekShops.map(ws => ws.week === week ? { ...ws, items } : ws) };
+      }
+      persist({ ...data, months, activeMonthId: data.activeMonthId, priceMemory: newMemory });
+    } else {
+      persist({
+        ...data,
+        weekShops: data.weekShops.map(ws => ws.week === week ? { ...ws, items } : ws),
+        priceMemory: newMemory,
+      });
+    }
   };
 
   const updateItemQuantity = (week: number, itemId: string, quantity: string) => {
@@ -129,6 +152,13 @@ export function useStore() {
     updateMonthShop(week, items);
   };
 
+  /** Look up suggested price for an item based on memory */
+  const getSuggestedPrice = (itemName: string, quantity: string): number | null => {
+    const memory = data.priceMemory?.[itemName.toLowerCase().trim()];
+    if (!memory) return null;
+    return calcPriceFromMemory(memory, quantity);
+  };
+
   // ── Meals ──
   const addMeal = (meal: Meal) => persist({ ...data, meals: [...data.meals, meal] });
 
@@ -154,6 +184,7 @@ export function useStore() {
   return {
     data, synced,
     activeMonth,
+    getSuggestedPrice,
     upsertMonth, setActiveMonth, deleteMonth,
     updateItemPrice, updateItemQuantity,
     toggleItemChecked, resetChecks,

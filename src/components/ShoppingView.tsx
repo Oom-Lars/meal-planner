@@ -1,11 +1,13 @@
 import { useState } from 'react';
 import type { AppData, ShoppingItem } from '../types';
+import { UNIT_TYPES } from '../types';
 import {
   CheckCircleIcon, PlusIcon, TrashIcon, ArrowPathIcon,
-  ChevronLeftIcon, ChevronRightIcon,
+  ChevronLeftIcon, ChevronRightIcon, SparklesIcon,
 } from '@heroicons/react/24/outline';
 import { CheckCircleIcon as CheckCircleSolid } from '@heroicons/react/24/solid';
 import { safeItems } from '../utils/dateUtils';
+import { parseQuantity, formatQuantity } from '../utils/priceUtils';
 
 interface Props {
   data: AppData;
@@ -16,6 +18,7 @@ interface Props {
   resetChecks: (week: number) => void;
   addShoppingItem: (week: number, item: ShoppingItem) => void;
   deleteShoppingItem: (week: number, itemId: string) => void;
+  getSuggestedPrice: (itemName: string, quantity: string) => number | null;
 }
 
 const CATEGORIES = ['Meat', 'Vegetables', 'Carbs', 'Pantry', 'Dairy', 'Other'];
@@ -23,7 +26,7 @@ const CATEGORIES = ['Meat', 'Vegetables', 'Carbs', 'Pantry', 'Dairy', 'Other'];
 export default function ShoppingView({
   data, setActiveMonth,
   updateItemPrice, updateItemQuantity, toggleItemChecked,
-  resetChecks, addShoppingItem, deleteShoppingItem,
+  resetChecks, addShoppingItem, deleteShoppingItem, getSuggestedPrice,
 }: Props) {
   const [activeWeek, setActiveWeek] = useState(1);
   const [editingPrice, setEditingPrice] = useState<string | null>(null);
@@ -32,7 +35,7 @@ export default function ShoppingView({
   const [editingQty, setEditingQty] = useState<string | null>(null);
   const [qtyInput, setQtyInput] = useState('');
   const [showAddItem, setShowAddItem] = useState(false);
-  const [newItem, setNewItem] = useState({ category: 'Vegetables', item: '', quantity: '', notes: '' });
+  const [newItem, setNewItem] = useState({ category: 'Vegetables', item: '', qtyAmount: '1', qtyUnit: 'each' as typeof UNIT_TYPES[number], notes: '' });
 
   // Month nav
   const months = data.months ?? [];
@@ -86,6 +89,13 @@ export default function ShoppingView({
     setPricePerKgInput('');
   };
 
+  const openPriceEdit = (item: ShoppingItem) => {
+    const suggested = getSuggestedPrice(item.item, item.quantity);
+    setEditingPrice(item.id);
+    setPriceInput(item.price != null && item.price > 0 ? item.price.toString() : suggested ? suggested.toFixed(2) : '');
+    setPricePerKgInput('');
+  };
+
   const saveQtyAndClose = (itemId: string) => {
     if (qtyInput.trim()) updateItemQuantity(activeWeek, itemId, qtyInput.trim());
     setEditingQty(null);
@@ -94,15 +104,18 @@ export default function ShoppingView({
 
   const handleAddItem = () => {
     if (!newItem.item.trim()) return;
+    const quantity = `${newItem.qtyAmount} ${newItem.qtyUnit}`;
+    const suggested = getSuggestedPrice(newItem.item, quantity);
     addShoppingItem(activeWeek, {
       id: `custom-${Date.now()}`,
       category: newItem.category,
       item: newItem.item.trim(),
-      quantity: newItem.quantity.trim() || '1',
+      quantity,
       notes: newItem.notes.trim() || undefined,
+      price: suggested ?? undefined,
       checked: false,
     });
-    setNewItem({ category: 'Vegetables', item: '', quantity: '', notes: '' });
+    setNewItem({ category: 'Vegetables', item: '', qtyAmount: '1', qtyUnit: 'each', notes: '' });
     setShowAddItem(false);
   };
 
@@ -176,14 +189,40 @@ export default function ShoppingView({
                 <div className="item-name">{item.item}</div>
                 <div className="item-meta">
                   {editingQty === item.id ? (
-                    <input className="qty-input" value={qtyInput}
-                      onChange={e => setQtyInput(e.target.value)}
-                      onBlur={() => saveQtyAndClose(item.id)}
-                      onKeyDown={e => e.key === 'Enter' && saveQtyAndClose(item.id)}
-                      autoFocus />
+                    <div className="qty-edit-wrap">
+                      <input
+                        className="qty-input qty-num"
+                        type="number"
+                        value={qtyInput.split(' ')[0] ?? ''}
+                        onChange={e => {
+                          const unit = qtyInput.split(' ')[1] ?? 'kg';
+                          setQtyInput(`${e.target.value} ${unit}`);
+                        }}
+                        min="0"
+                        step="0.1"
+                        autoFocus
+                      />
+                      <select
+                        className="qty-unit-select"
+                        value={qtyInput.split(' ')[1] ?? 'kg'}
+                        onChange={e => {
+                          const num = qtyInput.split(' ')[0] ?? '1';
+                          setQtyInput(`${num} ${e.target.value}`);
+                        }}
+                        onBlur={() => saveQtyAndClose(item.id)}
+                      >
+                        {UNIT_TYPES.map(u => <option key={u}>{u}</option>)}
+                      </select>
+                    </div>
                   ) : (
-                    <button className="qty-btn"
-                      onClick={() => { setEditingQty(item.id); setQtyInput(item.quantity); }}>
+                    <button
+                      className="qty-btn"
+                      onClick={() => {
+                        const parsed = parseQuantity(item.quantity);
+                        setEditingQty(item.id);
+                        setQtyInput(parsed ? formatQuantity(parsed) : item.quantity);
+                      }}
+                    >
                       {item.quantity}
                     </button>
                   )}
@@ -219,11 +258,15 @@ export default function ShoppingView({
                     </div>
                   </div>
                 ) : (
-                  <button className="price-btn"
-                    onClick={() => { setEditingPrice(item.id); setPriceInput(item.price?.toString() ?? ''); setPricePerKgInput(''); }}>
+                  <button className="price-btn" onClick={() => openPriceEdit(item)}>
                     {item.price != null && item.price > 0
                       ? `R ${item.price.toFixed(2)}`
-                      : <span className="price-empty">+ price</span>}
+                      : getSuggestedPrice(item.item, item.quantity)
+                        ? <span className="price-suggested">
+                            <SparklesIcon style={{ width: 11, height: 11 }} />
+                            R {getSuggestedPrice(item.item, item.quantity)!.toFixed(2)}
+                          </span>
+                        : <span className="price-empty">+ price</span>}
                   </button>
                 )}
               </div>
@@ -246,8 +289,13 @@ export default function ShoppingView({
           <input className="form-input" placeholder="Item name *" value={newItem.item}
             onChange={e => setNewItem(p => ({ ...p, item: e.target.value }))} />
           <div className="form-row">
-            <input className="form-input" placeholder="Quantity" value={newItem.quantity}
-              onChange={e => setNewItem(p => ({ ...p, quantity: e.target.value }))} />
+            <input className="form-input" type="number" placeholder="Amount" value={newItem.qtyAmount}
+              onChange={e => setNewItem(p => ({ ...p, qtyAmount: e.target.value }))}
+              style={{ flex: '0 0 80px' }} min="0" step="0.1" />
+            <select className="form-select" value={newItem.qtyUnit}
+              onChange={e => setNewItem(p => ({ ...p, qtyUnit: e.target.value as typeof UNIT_TYPES[number] }))}>
+              {UNIT_TYPES.map(u => <option key={u}>{u}</option>)}
+            </select>
             <input className="form-input" placeholder="Notes (optional)" value={newItem.notes}
               onChange={e => setNewItem(p => ({ ...p, notes: e.target.value }))} />
           </div>

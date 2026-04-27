@@ -96,6 +96,7 @@ export default function App() {
             resetChecks={store.resetChecks}
             addShoppingItem={store.addShoppingItem}
             deleteShoppingItem={store.deleteShoppingItem}
+            getSuggestedPrice={store.getSuggestedPrice}
           />
         )}
         {tab === 'meals' && (

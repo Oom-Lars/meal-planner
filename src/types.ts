@@ -1,3 +1,23 @@
+export const UNIT_TYPES = [
+  'kg', 'g', 'L', 'ml',
+  'head', 'pack', 'packet', 'bag', 'bulb',
+  'can', 'bottle', 'box', 'sachet', 'each',
+] as const;
+
+export type UnitType = typeof UNIT_TYPES[number];
+
+export interface ParsedQuantity {
+  amount: number;
+  unit: UnitType;
+}
+
+export interface PriceMemory {
+  pricePerUnit: number;  // price per 1 unit (e.g. R89.99 per kg)
+  unit: UnitType;
+  lastPrice: number;     // last total price paid
+  lastAmount: number;    // last amount bought
+}
+
 export type NoteType = 'Cook' | 'Leftovers' | 'Lazy Day' | 'Treat' | string;
 
 export interface Meal {
@@ -41,9 +61,9 @@ export interface MonthRecord {
 
 export interface AppData {
   meals: Meal[];
-  // Legacy flat fields kept for backward compat, new data uses months[]
   mealPlan: MealPlanDay[];
   weekShops: WeekShop[];
   months?: MonthRecord[];
   activeMonthId?: string;
+  priceMemory?: Record<string, PriceMemory>; // key = item name lowercase
 }
